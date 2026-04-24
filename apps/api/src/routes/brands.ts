@@ -5,6 +5,7 @@ import {
   createBrand,
   getBrandsByOwner,
   getBrandById,
+  getActiveDistractorBrands,
   updateBrand,
 } from "../db/queries/brands";
 import {
@@ -15,6 +16,7 @@ import { generateChallengeQuestions } from "../services/questions";
 import { optimizeImage } from "@brandblitz/storage";
 import { authenticate } from "../middleware/authenticate";
 import { createError } from "../middleware/error";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -122,8 +124,16 @@ router.post("/challenges", authenticate, async (req, res) => {
     endsAt: body.endsAt,
   });
 
+  const distractorBrands = await getActiveDistractorBrands(body.brandId);
+  if (distractorBrands.length === 0) {
+    logger.warn("Distractor pool is empty; using fallback options for generated questions", {
+      brandId: body.brandId,
+      challengeId: challenge.id,
+    });
+  }
+
   // Auto-generate questions from brand kit (uses other brands as distractors if available)
-  const questions = generateChallengeQuestions(challenge.id, brand, []);
+  const questions = generateChallengeQuestions(challenge.id, brand, distractorBrands);
   await insertChallengeQuestions(questions);
 
   res.status(201).json({
