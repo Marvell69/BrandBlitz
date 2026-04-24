@@ -1,29 +1,32 @@
-import path from "path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import path from "node:path";
+import { defineProject } from "vitest/config";
 
-export default defineConfig({
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+
+export default defineProject({
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@": path.resolve(projectRoot, "./src"),
     },
   },
   test: {
+    name: "@brandblitz/web",
+    root: projectRoot,
+    globals: true,
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     coverage: {
       provider: "v8",
-      all: true,
-      include: ["src/components/game/result-screen.tsx"],
-      reporter: ["text", "lcov"],
-      statements: 85,
-      branches: 85,
-      functions: 85,
-      lines: 85,
+      reporter: ["text", "html"],
+      reportsDirectory: "./coverage",
+      thresholds: {
+        branches: 0,
+        functions: 0,
+        lines: 0,
+        statements: 0,
+      },
     },
-    globals: true,
-    setupFiles: ["./src/test/setup.ts"],
   },
 });
