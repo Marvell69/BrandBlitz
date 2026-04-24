@@ -112,7 +112,7 @@ describe("error middleware", () => {
     process.env.NODE_ENV = "production";
     const req = makeRequest();
     const res = makeResponse();
-    const error = new BadRequestError("Stellar bad request");
+    const error = new BadRequestError("Stellar bad request", null as any);
 
     errorHandler(error as any, req, res, vi.fn());
 

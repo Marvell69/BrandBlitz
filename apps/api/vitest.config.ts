@@ -1,6 +1,13 @@
+import path from "path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@brandblitz/storage": path.resolve(__dirname, "../../packages/storage/src"),
+      "@brandblitz/stellar": path.resolve(__dirname, "../../packages/stellar/src"),
+    },
+  },
   test: {
     globals: true,
     environment: "node",
