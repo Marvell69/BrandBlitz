@@ -1,4 +1,5 @@
 import { submitBatchPayout, type PayoutRecipient } from "@brandblitz/stellar";
+import type { NetworkName } from "@brandblitz/stellar";
 import { getLeaderboard } from "../db/queries/sessions";
 import { getChallengeById, updateChallengeStatus } from "../db/queries/challenges";
 import { createPayout, updatePayoutStatus } from "../db/queries/payouts";
@@ -6,7 +7,6 @@ import { calculatePayoutShare, rankWinners } from "./scoring";
 import { payoutJobOptions, payoutQueue } from "../queues/payout.queue";
 import { logger } from "../lib/logger";
 import { config } from "../lib/config";
-import type { NetworkName } from "@brandblitz/stellar";
 
 /**
  * Enqueue a payout job for a completed challenge.
@@ -60,7 +60,6 @@ export async function processPayout(challengeId: string): Promise<void> {
   });
 
   const totalPoints = eligibleWinners.reduce((acc, s) => acc + s.totalScore, 0);
-
   const recipients: PayoutRecipient[] = [];
   const payoutRecords: { id: string; address: string; amount: string }[] = [];
 
@@ -70,7 +69,10 @@ export async function processPayout(challengeId: string): Promise<void> {
       totalPoints,
       challenge.pool_amount_usdc
     );
-    if (parseFloat(amount) < 0.0000001) continue;
+
+    if (parseFloat(amount) < 0.0000001) {
+      continue;
+    }
 
     const payout = await createPayout({
       challengeId,
@@ -101,17 +103,36 @@ export async function processPayout(challengeId: string): Promise<void> {
   );
 
   const txHashes: string[] = [];
+  let hasFailure = false;
+
   for (const result of results) {
     const status = result.success ? "sent" : "failed";
+    if (!result.success) {
+      hasFailure = true;
+    }
+
     for (const recipient of result.recipients) {
-      const record = payoutRecords.find((r) => r.address === recipient.address);
+      const record = payoutRecords.find((candidate) => candidate.address === recipient.address);
       if (record) {
         await updatePayoutStatus(record.id, status, result.txHash || undefined);
       }
     }
-    if (result.success) txHashes.push(result.txHash);
+
+    if (result.success) {
+      txHashes.push(result.txHash);
+    }
   }
 
-  await updateChallengeStatus(challengeId, "settled", { payoutTxHashes: txHashes });
+  await updateChallengeStatus(
+    challengeId,
+    hasFailure ? "payout_failed" : "settled",
+    txHashes.length > 0 ? { payoutTxHashes: txHashes } : undefined
+  );
+
+  if (hasFailure) {
+    logger.warn("Payout completed with failures", { challengeId, txHashes });
+    return;
+  }
+
   logger.info("Payout complete", { challengeId, txHashes });
 }

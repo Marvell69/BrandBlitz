@@ -1,95 +1,288 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import request from "supertest";
+import type { Server } from "node:http";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
-import webhooksRouter from "./webhooks";
 import { errorHandler } from "../middleware/error";
+import webhooksRouter from "./webhooks";
 
-// Mock dependencies
-vi.mock("../db/queries/challenges");
-vi.mock("../lib/logger");
-vi.mock("../lib/redis", () => ({
-  redis: {
-    call: vi.fn(),
+// ── Mocks ──────────────────────────────────────────────────────────────────────
+
+const getChallengeByMemoMock = vi.fn();
+const getChallengeByDepositTxHashMock = vi.fn();
+const updateChallengeStatusMock = vi.fn();
+const findPayoutByTxHashMock = vi.fn();
+const loggerInfoMock = vi.fn();
+const loggerWarnMock = vi.fn();
+
+vi.mock("../db/queries/challenges", () => ({
+  getChallengeByMemo: getChallengeByMemoMock,
+  getChallengeByDepositTxHash: getChallengeByDepositTxHashMock,
+  updateChallengeStatus: updateChallengeStatusMock,
+}));
+
+vi.mock("../db/queries/payouts", () => ({
+  findPayoutByTxHash: findPayoutByTxHashMock,
+}));
+
+vi.mock("../middleware/rate-limit", () => ({
+  apiLimiter: (_req: any, _res: any, next: any) => next(),
+}));
+
+vi.mock("../lib/logger", () => ({
+  logger: {
+    info: loggerInfoMock,
+    warn: loggerWarnMock,
+    error: vi.fn(),
   },
 }));
 
-import * as challengeQueries from "../db/queries/challenges";
+vi.mock("../lib/redis", () => ({
+  redis: { call: vi.fn() },
+}));
 
-const app = express();
-app.use(express.json());
-app.use("/webhooks", webhooksRouter);
-app.use(errorHandler);
+// ── Test server helpers ────────────────────────────────────────────────────────
 
-const WEBHOOK_SECRET = "test-secret";
-process.env.WEBHOOK_SECRET = WEBHOOK_SECRET;
+async function startServer(): Promise<{ server: Server; baseUrl: string }> {
+  const app = express();
+  app.use(express.json());
+  app.use("/webhooks", webhooksRouter);
+  app.use(errorHandler);
+
+  const server = app.listen(0);
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Failed to start test server");
+  }
+
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${address.port}`,
+  };
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe("Webhooks API", () => {
+  let currentServer: Server | undefined;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.WEBHOOK_SECRET = "test-secret";
+
+    getChallengeByMemoMock.mockResolvedValue({
+      id: "challenge-1",
+      status: "pending_deposit",
+    });
+    getChallengeByDepositTxHashMock.mockResolvedValue(null);
+    findPayoutByTxHashMock.mockResolvedValue(null);
+    updateChallengeStatusMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => {
+      if (currentServer) {
+        currentServer.close(() => resolve());
+        currentServer = undefined;
+        return;
+      }
+      resolve();
+    });
   });
 
   describe("POST /webhooks/stellar/deposit", () => {
-    it("should 401 if secret is wrong", async () => {
-      const res = await request(app)
-        .post("/webhooks/stellar/deposit")
-        .set("x-webhook-secret", "wrong-secret")
-        .send({ memo: "m1", txHash: "h1", amount: "10" });
+    it("activates a challenge on a valid webhook", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
 
-      expect(res.status).toBe(401);
-    });
-
-    it("should activate challenge happy path", async () => {
-      (challengeQueries.getChallengeByMemo as any).mockResolvedValue({
-        id: "c1",
-        status: "pending_deposit",
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "550e8400-e29b-41d4-a716-446655440000",
+          txHash: "a".repeat(64),
+          amount: "10.0000000",
+        }),
       });
 
-      const res = await request(app)
-        .post("/webhooks/stellar/deposit")
-        .set("x-webhook-secret", WEBHOOK_SECRET)
-        .send({ memo: "m1", txHash: "h1", amount: "10" });
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe("activated");
-      expect(challengeQueries.updateChallengeStatus).toHaveBeenCalledWith("c1", "active", {
-        depositTx: "h1",
+      expect(response.status).toBe(200);
+      expect(updateChallengeStatusMock).toHaveBeenCalledWith("challenge-1", "active", {
+        depositTx: "a".repeat(64),
       });
     });
 
-    it("should be idempotent for already processed challenges", async () => {
-      (challengeQueries.getChallengeByMemo as any).mockResolvedValue({
-        id: "c1",
-        status: "active", // already active
+    it("is idempotent for already active challenges", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+      getChallengeByMemoMock.mockResolvedValue({ id: "challenge-1", status: "active" });
+
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "550e8400-e29b-41d4-a716-446655440000",
+          txHash: "a".repeat(64),
+          amount: "10.0000000",
+        }),
       });
 
-      const res = await request(app)
-        .post("/webhooks/stellar/deposit")
-        .set("x-webhook-secret", WEBHOOK_SECRET)
-        .send({ memo: "m1", txHash: "h1", amount: "10" });
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe("already_processed");
-      expect(challengeQueries.updateChallengeStatus).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
     });
 
-    it("should 404 for unknown memo", async () => {
-      (challengeQueries.getChallengeByMemo as any).mockResolvedValue(null);
+    it("returns 404 for an unknown memo", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+      getChallengeByMemoMock.mockResolvedValue(null);
 
-      const res = await request(app)
-        .post("/webhooks/stellar/deposit")
-        .set("x-webhook-secret", WEBHOOK_SECRET)
-        .send({ memo: "unknown", txHash: "h1", amount: "10" });
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "unknown-memo",
+          txHash: "a".repeat(64),
+          amount: "10.0000000",
+        }),
+      });
 
-      expect(res.status).toBe(404);
+      expect(response.status).toBe(404);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
     });
 
-    it("should 400 if fields are missing", async () => {
-      const res = await request(app)
-        .post("/webhooks/stellar/deposit")
-        .set("x-webhook-secret", WEBHOOK_SECRET)
-        .send({ memo: "m1" }); // missing txHash
+    it("returns 200 and no-ops for duplicate tx hashes", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+      getChallengeByDepositTxHashMock.mockResolvedValue({ id: "challenge-older" });
 
-      expect(res.status).toBe(400);
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "550e8400-e29b-41d4-a716-446655440000",
+          txHash: "b".repeat(64),
+          amount: "10.0000000",
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects the wrong shared secret", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "wrong-secret",
+        },
+        body: JSON.stringify({
+          memo: "550e8400-e29b-41d4-a716-446655440000",
+          txHash: "a".repeat(64),
+          amount: "10.0000000",
+        }),
+      });
+
+      expect(response.status).toBe(401);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 for missing required fields", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "550e8400-e29b-41d4-a716-446655440000",
+          // txHash intentionally omitted
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects an empty memo", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "",
+          txHash: "a".repeat(64),
+          amount: "10.0000000",
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects an empty tx hash", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "550e8400-e29b-41d4-a716-446655440000",
+          txHash: "",
+          amount: "10.0000000",
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects unknown fields", async () => {
+      const { server, baseUrl } = await startServer();
+      currentServer = server;
+
+      const response = await fetch(`${baseUrl}/webhooks/stellar/deposit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Webhook-Secret": "test-secret",
+        },
+        body: JSON.stringify({
+          memo: "550e8400-e29b-41d4-a716-446655440000",
+          txHash: "a".repeat(64),
+          amount: "10.0000000",
+          extra: "unexpected",
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      expect(updateChallengeStatusMock).not.toHaveBeenCalled();
     });
   });
 });

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Challenge } from "../db/queries/challenges";
 import type { LeaderboardSession } from "../db/queries/sessions";
 
+// ── Mocks ──────────────────────────────────────────────────────────────────────
+
 const mocks = vi.hoisted(() => ({
   getChallengeById: vi.fn(),
   updateChallengeStatus: vi.fn(),
@@ -9,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   createPayout: vi.fn(),
   updatePayoutStatus: vi.fn(),
   submitBatchPayout: vi.fn(),
+  queueAdd: vi.fn(),
+  emitCounterMetric: vi.fn(),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -36,7 +40,18 @@ vi.mock("@brandblitz/stellar", () => ({
 
 vi.mock("../queues/payout.queue", () => ({
   payoutQueue: {
-    add: vi.fn(),
+    add: mocks.queueAdd,
+  },
+}));
+
+vi.mock("../lib/redis", () => ({
+  emitCounterMetric: mocks.emitCounterMetric,
+  stellarSequenceStore: {
+    get: vi.fn(),
+    set: vi.fn(),
+    del: vi.fn(),
+    incr: vi.fn(),
+    setIfAbsent: vi.fn(),
   },
 }));
 
@@ -45,6 +60,8 @@ vi.mock("../lib/logger", () => ({
 }));
 
 import { processPayout } from "./payout";
+
+// ── Fixtures ───────────────────────────────────────────────────────────────────
 
 const challengeFixture: Challenge = {
   id: "challenge-1",
@@ -87,6 +104,8 @@ function buildLeaderboardSession(
   };
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
 describe("processPayout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -99,9 +118,7 @@ describe("processPayout", () => {
       id: `payout-${userId}`,
     }));
     mocks.submitBatchPayout.mockImplementation(
-      async (
-        recipients: Array<{ address: string; amount: string }>
-      ) => [
+      async (recipients: Array<{ address: string; amount: string }>) => [
         {
           txHash: "tx-test-1",
           recipients,
@@ -138,7 +155,7 @@ describe("processPayout", () => {
     ];
 
     expect(recipients.length).toBeGreaterThan(0);
-    expect(recipients.map((recipient) => recipient.address)).toEqual([
+    expect(recipients.map((r) => r.address)).toEqual([
       "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
       "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBQ2",
     ]);
@@ -175,8 +192,84 @@ describe("processPayout", () => {
     ];
 
     expect(recipients).toHaveLength(1);
-    expect(recipients[0]?.address).toBe(
-      "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC3"
+    expect(recipients[0]?.address).toBe("GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC3");
+  });
+
+  it("marks a challenge settled when there are no ranked sessions", async () => {
+    mocks.getChallengeById.mockResolvedValue({ ...challengeFixture, id: "challenge-2" });
+    mocks.getLeaderboard.mockResolvedValue([]);
+
+    await processPayout("challenge-2");
+
+    expect(mocks.submitBatchPayout).not.toHaveBeenCalled();
+    expect(mocks.updateChallengeStatus).toHaveBeenCalledWith("challenge-2", "settled");
+  });
+
+  it("marks payouts failed when Stellar submission fails", async () => {
+    mocks.getChallengeById.mockResolvedValue({ ...challengeFixture, id: "challenge-3", pool_amount_usdc: "20.0000000" });
+    mocks.getLeaderboard.mockResolvedValue([
+      buildLeaderboardSession({ id: "session-1", user_id: "user-1", total_score: 100, stellar_address: "GUSER1" }),
+      buildLeaderboardSession({ id: "session-2", user_id: "user-2", total_score: 50, stellar_address: "GUSER2" }),
+    ]);
+    mocks.submitBatchPayout.mockResolvedValue([
+      {
+        txHash: "",
+        recipients: [
+          { address: "GUSER1", amount: "13.3333333" },
+          { address: "GUSER2", amount: "6.6666667" },
+        ],
+        success: false,
+        error: "tx_failed",
+      },
+    ]);
+
+    await processPayout("challenge-3");
+
+    expect(mocks.updatePayoutStatus).toHaveBeenCalledWith("payout-user-1", "failed", undefined);
+    expect(mocks.updatePayoutStatus).toHaveBeenCalledWith("payout-user-2", "failed", undefined);
+    expect(mocks.updateChallengeStatus).toHaveBeenCalledWith("challenge-3", "payout_failed", undefined);
+  });
+
+  it("returns early when the challenge is not in the ended state", async () => {
+    mocks.getChallengeById.mockResolvedValue({ ...challengeFixture, id: "challenge-4", status: "active" });
+
+    await processPayout("challenge-4");
+
+    expect(mocks.getLeaderboard).not.toHaveBeenCalled();
+    expect(mocks.createPayout).not.toHaveBeenCalled();
+    expect(mocks.submitBatchPayout).not.toHaveBeenCalled();
+    expect(mocks.updateChallengeStatus).not.toHaveBeenCalled();
+  });
+
+  it("skips recipients whose share falls below the dust threshold", async () => {
+    mocks.getChallengeById.mockResolvedValue({ ...challengeFixture, id: "challenge-5", pool_amount_usdc: "0.0000001" });
+    mocks.getLeaderboard.mockResolvedValue([
+      buildLeaderboardSession({ id: "session-1", user_id: "user-1", total_score: 9999999, stellar_address: "GUSER1" }),
+      buildLeaderboardSession({ id: "session-2", user_id: "user-2", total_score: 1, stellar_address: "GUSER2" }),
+    ]);
+    mocks.submitBatchPayout.mockResolvedValue([
+      {
+        txHash: "tx-dust",
+        recipients: [{ address: "GUSER1", amount: "0.0000001" }],
+        success: true,
+      },
+    ]);
+
+    await processPayout("challenge-5");
+
+    expect(mocks.createPayout).toHaveBeenCalledTimes(1);
+    expect(mocks.createPayout).toHaveBeenCalledWith({
+      challengeId: "challenge-5",
+      userId: "user-1",
+      stellarAddress: "GUSER1",
+      amountUsdc: "0.0000001",
+    });
+    expect(mocks.submitBatchPayout).toHaveBeenCalledWith(
+      [{ address: "GUSER1", amount: "0.0000001" }],
+      expect.any(String),
+      "challenge-5",
+      "testnet",
+      expect.any(Object)
     );
   });
 });
