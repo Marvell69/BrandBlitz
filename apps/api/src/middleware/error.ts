@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
+import { ZodError } from "zod";
 import { logger } from "../lib/logger";
 import { BadRequestError } from "@stellar/stellar-sdk";
-import { ZodError } from "zod";
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -32,6 +32,7 @@ export function errorHandler(
 
   statusCode = statusCode ?? 500;
   const isServerError = statusCode >= 500;
+
   if (isServerError) {
     message = "Internal Server Error";
   }
