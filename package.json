@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
+    "test": "turbo run test",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "lint": "turbo run lint",
@@ -14,6 +16,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .gitignore"
   },
   "devDependencies": {
+    "@playwright/test": "1.51.1",
     "@vitest/coverage-v8": "4.1.2",
     "eslint": "10.1.0",
     "prettier": "3.8.1",

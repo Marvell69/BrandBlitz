@@ -13,6 +13,8 @@ interface BrandKitFormProps {
   apiToken: string;
 }
 
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/;
+
 export function BrandKitForm({ apiToken }: BrandKitFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -31,10 +33,27 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
   const [logoKey, setLogoKey] = useState<string | null>(null);
   const [productImageKeys, setProductImageKeys] = useState<string[]>([]);
 
+  const hasRequiredFields = fields.name.trim() !== "" && fields.poolAmountUsdc.trim() !== "";
+  const hasValidColors =
+    HEX_COLOR_PATTERN.test(fields.primaryColor) && HEX_COLOR_PATTERN.test(fields.secondaryColor);
+  const hasValidPoolAmount =
+    fields.poolAmountUsdc.trim() !== "" && Number(fields.poolAmountUsdc) >= 10;
+  const hasValidDuration =
+    fields.durationHours.trim() !== "" &&
+    Number.isInteger(Number(fields.durationHours)) &&
+    Number(fields.durationHours) >= 1 &&
+    Number(fields.durationHours) <= 720;
+  const canSubmit =
+    !submitting &&
+    hasRequiredFields &&
+    hasValidColors &&
+    hasValidPoolAmount &&
+    hasValidDuration &&
+    Boolean(logoKey);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!logoKey) {
-      setError("Please upload a brand logo.");
+    if (!canSubmit) {
       return;
     }
 
@@ -49,6 +68,13 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
       const brandRes = await api.post("/brands", {
         name: fields.name,
         tagline: fields.tagline,
+        brandStory: fields.description,
+        primaryColor: fields.primaryColor,
+        secondaryColor: fields.secondaryColor,
+        logoKey,
+        usp: fields.tagline || undefined,
+        productImage1Key: productImageKeys[0],
+        productImage2Key: productImageKeys[1],
         brandStory: fields.brandStory,
         primaryColor: fields.primaryColor,
         secondaryColor: fields.secondaryColor,
@@ -68,6 +94,20 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
       const challengeRes = await api.post("/brands/challenges", {
         brandId,
         poolAmountUsdc: fields.poolAmountUsdc,
+        endsAt: new Date(
+          Date.now() + parseInt(fields.durationHours, 10) * 60 * 60 * 1000
+        ).toISOString(),
+      });
+
+      const { depositInstructions } = challengeRes.data;
+
+      // Redirect to brand page to show deposit instructions
+      router.push(
+        `/brand/${brandId}?depositAddress=${encodeURIComponent(
+          depositInstructions.hotWalletAddress
+        )}&memo=${encodeURIComponent(depositInstructions.memo)}&amount=${encodeURIComponent(
+          depositInstructions.amount
+        )}`
         endsAt,
       });
 
@@ -139,12 +179,20 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
                   className="h-10 w-14 rounded border border-[var(--border)] cursor-pointer"
                 />
                 <Input
+                  id="primaryColorHex"
+                  aria-label="Primary Color Hex"
                   value={fields.primaryColor}
                   onChange={set("primaryColor")}
                   placeholder="#6366f1"
                   className="font-mono"
+                  pattern="^#[0-9a-f]{6}$"
+                  aria-invalid={!HEX_COLOR_PATTERN.test(fields.primaryColor)}
+                  spellCheck={false}
                 />
               </div>
+              {!HEX_COLOR_PATTERN.test(fields.primaryColor) ? (
+                <p className="text-xs text-red-500">Use format `#rrggbb` in lowercase.</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="secondaryColor">Secondary Color</Label>
@@ -157,12 +205,20 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
                   className="h-10 w-14 rounded border border-[var(--border)] cursor-pointer"
                 />
                 <Input
+                  id="secondaryColorHex"
+                  aria-label="Secondary Color Hex"
                   value={fields.secondaryColor}
                   onChange={set("secondaryColor")}
                   placeholder="#a5b4fc"
                   className="font-mono"
+                  pattern="^#[0-9a-f]{6}$"
+                  aria-invalid={!HEX_COLOR_PATTERN.test(fields.secondaryColor)}
+                  spellCheck={false}
                 />
               </div>
+              {!HEX_COLOR_PATTERN.test(fields.secondaryColor) ? (
+                <p className="text-xs text-red-500">Use format `#rrggbb` in lowercase.</p>
+              ) : null}
             </div>
           </div>
 
@@ -250,7 +306,7 @@ export function BrandKitForm({ apiToken }: BrandKitFormProps) {
         </p>
       )}
 
-      <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+      <Button type="submit" size="lg" className="w-full" disabled={!canSubmit}>
         {submitting ? "Creating..." : "Create Brand Kit & Challenge"}
       </Button>
     </form>

@@ -23,6 +23,7 @@
 - [Running Tests](#running-tests)
 - [Environment Variables](#environment-variables)
 - [Services & Ports](#services--ports)
+- [E2E](#e2e)
 - [Game Flow (Technical)](#game-flow-technical)
 - [Stellar Integration](#stellar-integration)
 - [Anti-Cheat](#anti-cheat)
@@ -369,6 +370,33 @@ Only port 80 (and 443 in prod) is exposed externally in the Docker stack.
 
 ---
 
+## E2E
+
+The Playwright suite lives in [`e2e/`](./e2e) and targets the live Docker dev stack with `baseURL=http://localhost:3000`.
+
+```bash
+docker compose up -d --build
+pnpm e2e
+```
+
+What it covers:
+
+- Mocked Google OAuth sign-in to the real web app, ending on `/dashboard`
+- Brand creation through the UI, followed by deposit instructions
+- Full player golden path: warmup wait, challenge start, 3 rounds, results screen
+
+Artifacts:
+
+- Trace, video, and screenshots are retained on failure in `e2e/artifacts/`
+- In CI, upload `e2e/artifacts/` as the job artifact directory
+
+Notes:
+
+- The Docker dev override enables the mocked Google OAuth path used by Playwright.
+- The suite assumes the stack is already running; it does not start containers for you.
+
+---
+
 ## Game Flow (Technical)
 
 ```
@@ -539,6 +567,7 @@ Shared test setup is in `tests/setup.ts` and includes reusable DB test helpers b
 pnpm dev          # Start all apps in parallel (Turborepo)
 pnpm build        # Build all packages and apps
 pnpm test         # Run all test suites
+pnpm e2e          # Run Playwright end-to-end tests against docker-compose
 pnpm test:coverage # Run all test suites with coverage
 pnpm lint         # Lint all packages
 pnpm type-check   # TypeScript type-check everything

@@ -68,14 +68,15 @@ export function UploadField({
 
       // 1. Get presigned URL
       const presignRes = await api.post("/upload/presign", {
-        filename: file.name,
+        type: uploadType,
         contentType: file.type,
-        uploadType,
+        contentLength: file.size,
       });
 
-      const { presignedUrl, key, publicUrl } = presignRes.data;
+      const { uploadUrl, key, publicUrl } = presignRes.data;
 
       // 2. Upload directly to S3/MinIO
+      await fetch(uploadUrl, {
       const putRes = await fetch(presignedUrl, {
         method: "PUT",
         body: file,
