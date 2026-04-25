@@ -3,7 +3,10 @@ import { redis } from "../../lib/redis";
 import { processPayout } from "../../services/payout";
 import { logger } from "../../lib/logger";
 
-export const PAYOUT_WORKER_CONCURRENCY = 2;
+export const PAYOUT_WORKER_CONCURRENCY = parseInt(
+  process.env.PAYOUT_WORKER_CONCURRENCY ?? "2",
+  10
+);
 
 export const payoutWorkerOptions = {
   connection: redis,

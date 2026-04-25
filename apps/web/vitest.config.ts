@@ -1,13 +1,21 @@
-import path from "path";
-import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { defineProject } from "vitest/config";
+import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+
+export default defineProject({
+  plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(projectRoot, "./src"),
     },
   },
   test: {
+    name: "@brandblitz/web",
+    root: projectRoot,
+    globals: true,
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
@@ -24,5 +32,15 @@ export default defineConfig({
         lines: 80,
       },
     },
+      reporter: ["text", "json", "html"],
+      include: ["src/components/game/countdown-timer.tsx"],
+      reportsDirectory: "./coverage",
+      thresholds: {
+        lines: 95,
+        functions: 95,
+        branches: 95,
+        statements: 95
+      }
+    }
   },
 });

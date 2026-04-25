@@ -51,6 +51,24 @@ export async function getBrandById(id: string): Promise<Brand | null> {
   return result.rows[0] ?? null;
 }
 
+/**
+ * Fetch recent brands to use as distractor pool when generating challenge questions.
+ * Excludes the current brand and caps results at 20.
+ */
+export async function getActiveDistractorBrands(excludeBrandId: string): Promise<Brand[]> {
+  const result = await query<Brand>(
+    `SELECT *
+     FROM brands
+     WHERE id <> $1
+     ORDER BY created_at DESC
+     LIMIT 20`,
+    [excludeBrandId]
+  );
+
+  // Defensive cap in case query behavior changes in the future.
+  return result.rows.slice(0, 20);
+}
+
 export async function updateBrand(
   id: string,
   ownerUserId: string,
@@ -67,4 +85,12 @@ export async function updateBrand(
     [id, ownerUserId, ...values]
   );
   return result.rows[0] ?? null;
+}
+
+export async function deleteBrand(id: string, ownerUserId: string): Promise<boolean> {
+  const result = await query(
+    "DELETE FROM brands WHERE id = $1 AND owner_user_id = $2 RETURNING id",
+    [id, ownerUserId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
