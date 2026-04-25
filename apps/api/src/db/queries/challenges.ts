@@ -18,7 +18,7 @@ export interface Challenge {
   primary_color?: string | null;
   secondary_color?: string | null;
   status: ChallengeStatus;
-  stellar_deposit_tx: string | null;
+  deposit_tx_hash: string | null;
   payout_tx_hashes: string[] | null;
   max_players: number | null;
   starts_at: string;
@@ -60,8 +60,16 @@ export async function createChallenge(data: {
 
 export async function getChallengeByMemo(challengeId: string): Promise<Challenge | null> {
   const result = await query<Challenge>(
-    "SELECT * FROM challenges WHERE challenge_id = $1",
+    "SELECT * FROM challenges WHERE deposit_memo = $1",
     [challengeId]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function getChallengeByDepositTxHash(txHash: string): Promise<Challenge | null> {
+  const result = await query<Challenge>(
+    "SELECT * FROM challenges WHERE deposit_tx_hash = $1 LIMIT 1",
+    [txHash]
   );
   return result.rows[0] ?? null;
 }
@@ -108,7 +116,7 @@ export async function updateChallengeStatus(
 ): Promise<void> {
   if (extras?.depositTx) {
     await query(
-      "UPDATE challenges SET status = $1, stellar_deposit_tx = $2 WHERE id = $3",
+      "UPDATE challenges SET status = $1, deposit_tx_hash = $2 WHERE id = $3",
       [status, extras.depositTx, id]
     );
   } else if (extras?.payoutTxHashes) {

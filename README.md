@@ -20,6 +20,7 @@
 - [Prerequisites](#prerequisites)
 - [Quick Start (Docker)](#quick-start-docker)
 - [Quick Start (Local)](#quick-start-local)
+- [Running Tests](#running-tests)
 - [Environment Variables](#environment-variables)
 - [Services & Ports](#services--ports)
 - [Game Flow (Technical)](#game-flow-technical)
@@ -344,8 +345,10 @@ See [`.env.example`](./.env.example) for all variables with inline documentation
 | `GOOGLE_CLIENT_ID/SECRET` | Google OAuth credentials |
 | `STELLAR_HOT_WALLET_SECRET` | Stellar keypair for payouts |
 | `STELLAR_NETWORK` | `testnet` or `public` |
-| `S3_*` | Storage endpoint, credentials, bucket |
+| `S3_*` | Storage endpoint, credentials, bucket (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) |
 | `WEBHOOK_SECRET` | Protects `/webhooks/stellar` |
+| `PHONE_HASH_SALT` | HMAC salt for phone-number hashing (32-byte random) |
+| `NEXTAUTH_API_URL` | Internal URL next-auth uses to reach the API (e.g. `http://localhost/api`) |
 
 ---
 
@@ -508,12 +511,35 @@ Production differences from dev:
 
 ---
 
+## Running Tests
+
+Vitest is configured at the monorepo root with per-workspace project configs.
+
+```bash
+# Run all workspace tests
+pnpm test
+
+# Run all workspace tests with v8 coverage
+pnpm test:coverage
+
+# Run tests for one workspace
+pnpm --filter @brandblitz/api test
+pnpm --filter @brandblitz/web test
+pnpm --filter @brandblitz/stellar test
+pnpm --filter @brandblitz/storage test
+```
+
+Shared test setup is in `tests/setup.ts` and includes reusable DB test helpers based on test schema prefixes.
+
+---
+
 ## Workspace Scripts
 
 ```bash
 pnpm dev          # Start all apps in parallel (Turborepo)
 pnpm build        # Build all packages and apps
 pnpm test         # Run all test suites
+pnpm test:coverage # Run all test suites with coverage
 pnpm lint         # Lint all packages
 pnpm type-check   # TypeScript type-check everything
 pnpm format       # Prettier format all .ts/.tsx/.json files
