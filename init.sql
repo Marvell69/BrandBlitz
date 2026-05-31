@@ -73,7 +73,7 @@ CREATE TABLE challenges (
   brand_id            UUID NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
   challenge_id        TEXT NOT NULL UNIQUE,
   status              TEXT NOT NULL DEFAULT 'pending_deposit'
-                        CHECK (status IN ('pending_deposit', 'active', 'ended', 'settled', 'payout_failed', 'cancelled')),
+                        CHECK (status IN ('pending_deposit', 'active', 'ended', 'settled', 'payout_failed', 'cancelled', 'refunded')),
   pool_amount_stroops BIGINT NOT NULL DEFAULT 0,
   stellar_deposit_tx  TEXT,
   deposit_address     TEXT,
@@ -88,7 +88,7 @@ CREATE TABLE challenges (
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT challenges_ends_after_starts CHECK (ends_at IS NULL OR ends_at > starts_at),
   CONSTRAINT challenges_pool_amount_positive CHECK (
-    status IN ('pending_deposit', 'cancelled') OR pool_amount_stroops > 0
+    status IN ('pending_deposit', 'cancelled', 'refunded') OR pool_amount_stroops > 0
   )
 );
 
@@ -202,6 +202,24 @@ CREATE INDEX idx_payouts_user_id      ON payouts (user_id);
 CREATE INDEX idx_payouts_status       ON payouts (status);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- REFUNDS
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE refunds (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  challenge_id     UUID NOT NULL REFERENCES challenges(id) ON DELETE CASCADE UNIQUE,
+  admin_id         UUID REFERENCES users(id) ON DELETE SET NULL,
+  reason           TEXT NOT NULL,
+  amount_stroops   BIGINT NOT NULL CHECK (amount_stroops > 0),
+  destination      TEXT NOT NULL,
+  tx_hash          TEXT NOT NULL UNIQUE,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_refunds_admin_id ON refunds (admin_id);
+CREATE INDEX idx_refunds_tx_hash  ON refunds (tx_hash);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- FRAUD FLAGS
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE fraud_flags (
@@ -312,6 +330,7 @@ CREATE TRIGGER users_updated_at           BEFORE UPDATE ON users             FOR
 CREATE TRIGGER brands_updated_at          BEFORE UPDATE ON brands            FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER challenges_updated_at      BEFORE UPDATE ON challenges        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER payouts_updated_at         BEFORE UPDATE ON payouts           FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER refunds_updated_at         BEFORE UPDATE ON refunds           FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER challenge_questions_updated_at BEFORE UPDATE ON challenge_questions FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER game_sessions_updated_at   BEFORE UPDATE ON game_sessions    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 

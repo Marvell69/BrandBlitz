@@ -278,10 +278,17 @@ This document explains the canonical BrandBlitz schema, the current table relati
 
 ## refunds
 
-- Purpose: refund tracking is not currently defined in the repository schema.
-- Expected semantics: record refund requests, amounts, status, and related payout/deposit references.
+- Purpose: records one admin-triggered refund per challenge for audit and reconciliation.
+- Key columns
+  - `id`: PK
+  - `challenge_id`: unique FK to `challenges(id)` with `ON DELETE CASCADE`
+  - `admin_id`: admin user that initiated the refund
+  - `reason`: operator-entered refund reason
+  - `amount_stroops`: refunded USDC stroop amount
+  - `destination`: Stellar account that received the refund
+  - `tx_hash`: unique refund transaction hash
 - Soft delete: not implemented.
-- Retention: should be append-only for audit and reconciliation.
+- Retention: append-only for audit and reconciliation.
 
 ## audit_log
 

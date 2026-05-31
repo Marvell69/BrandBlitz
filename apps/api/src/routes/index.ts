@@ -11,6 +11,7 @@ import leaguesRoutes from "./leagues";
 import adminConfigRoutes from "./admin/config";
 import adminUsersRoutes from "./admin/users";
 import adminFraudRoutes from "./admin/fraud";
+import adminChallengesRoutes from "./admin/challenges";
 import deleteAccountRoutes from "./me/delete-account";
 
 export function registerRoutes(app: Express): void {
@@ -26,5 +27,6 @@ export function registerRoutes(app: Express): void {
   app.use("/admin/config", adminConfigRoutes);
   app.use("/admin/users", adminUsersRoutes);
   app.use("/admin/fraud-flags", adminFraudRoutes);
+  app.use("/admin/challenges", adminChallengesRoutes);
   app.use("/me/delete-account", deleteAccountRoutes);
 }

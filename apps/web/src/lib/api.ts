@@ -41,7 +41,14 @@ export interface Challenge {
   challenge_id: string;
   pool_amount_stroops: string;
   pool_amount_usdc: string;
-  status: "pending_deposit" | "active" | "ended" | "settled" | "payout_failed";
+  status:
+    | "pending_deposit"
+    | "active"
+    | "ended"
+    | "settled"
+    | "payout_failed"
+    | "cancelled"
+    | "refunded";
   starts_at: string;
   ends_at: string | null;
   // joined fields
@@ -98,6 +105,8 @@ export interface UserProfile {
 
 export interface StreakResponse {
   streak: number;
+  lastPlayDay?: string | null;
+  repairAvailable?: boolean;
   nextMilestone: number;
   progress: number;
   milestoneJustHit: boolean;
