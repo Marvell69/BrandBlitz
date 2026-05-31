@@ -6,7 +6,9 @@ export type ChallengeStatus =
   | "active"
   | "ended"
   | "settled"
-  | "payout_failed";
+  | "payout_failed"
+  | "cancelled"
+  | "refunded";
 
 export interface Challenge {
   id: string;

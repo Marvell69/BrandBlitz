@@ -8,19 +8,20 @@ files under `apps/api/migrations/`.
 
 ### Rules
 
-| Scenario | What to run |
-|---|---|
-| Fresh install / CI from scratch | `psql -f init.sql` |
-| Existing database upgrade | `pnpm --filter @brandblitz/api migrate` |
-| Migration verification in CI | `pnpm --filter @brandblitz/api migrate:dryrun` |
+| Scenario                        | What to run                                    |
+| ------------------------------- | ---------------------------------------------- |
+| Fresh install / CI from scratch | `psql -f init.sql`                             |
+| Existing database upgrade       | `pnpm --filter @brandblitz/api migrate`        |
+| Migration verification in CI    | `pnpm --filter @brandblitz/api migrate:dryrun` |
 
 ### Migration files
 
-| File | Description |
-|---|---|
-| `00000-initial.sql` | Baseline snapshot of the current schema |
-| `00001-hot-path-indexes.sql` | Adds the challenge, leaderboard, and payout indexes |
-| `00001-hot-path-indexes.down.sql` | Rolls back the hot-path indexes safely |
+| File                              | Description                                              |
+| --------------------------------- | -------------------------------------------------------- |
+| `00000-initial.sql`               | Baseline snapshot of the current schema                  |
+| `00001-hot-path-indexes.sql`      | Adds the challenge, leaderboard, and payout indexes      |
+| `00001-hot-path-indexes.down.sql` | Rolls back the hot-path indexes safely                   |
+| `00002-refunds.sql`               | Adds refund tracking and the `refunded` challenge status |
 
 ### Operational notes
 
