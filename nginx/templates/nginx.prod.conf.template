@@ -9,8 +9,11 @@ upstream api {
 }
 
 # Rate limiting zones
-limit_req_zone $binary_remote_addr zone=api_zone:10m rate=30r/s;
-limit_req_zone $binary_remote_addr zone=web_zone:10m rate=60r/s;
+# Coarse anti-abuse fence keyed by IP — raised to accommodate mobile carriers
+# and corporate NAT where thousands of users share one IP.
+# Fine-grained per-user limits are enforced at the application layer (rate-limit.ts).
+limit_req_zone $binary_remote_addr zone=api_zone:10m rate=200r/s;
+limit_req_zone $binary_remote_addr zone=web_zone:10m rate=200r/s;
 
 # Redirect HTTP → HTTPS
 server {
@@ -45,7 +48,7 @@ server {
 
     # API proxy
     location /api/ {
-        limit_req zone=api_zone burst=50 nodelay;
+        limit_req zone=api_zone burst=500 nodelay;
 
         proxy_pass http://api/;
         proxy_http_version 1.1;
@@ -67,7 +70,7 @@ server {
 
     # Next.js app
     location / {
-        limit_req zone=web_zone burst=100 nodelay;
+        limit_req zone=web_zone burst=500 nodelay;
 
         proxy_pass http://web;
         proxy_http_version 1.1;

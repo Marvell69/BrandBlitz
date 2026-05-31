@@ -255,7 +255,6 @@ const FormSchema = z.object({
             <Label>Logo</Label>
             <UploadField
               label="Upload Brand Logo"
-              accept="image/png,image/svg+xml,image/jpeg,image/webp"
               uploadType="brand-logo"
               apiToken={apiToken}
               onUploaded={(key) => setLogoKey(key)}
@@ -266,7 +265,6 @@ const FormSchema = z.object({
             <Label>Product Images (optional)</Label>
             <UploadField
               label="Upload Product Image"
-              accept="image/*"
               uploadType="product-image"
               apiToken={apiToken}
               onUploaded={(key) =>

@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { logger } from "../lib/logger";
 import { captureExceptionSync } from "../lib/sentry";
 import { BadRequestError } from "@stellar/stellar-sdk";
+import { config } from "../lib/config";
 
 export interface ApiError extends Error {
   statusCode?: number;
@@ -64,7 +65,7 @@ export function errorHandler(
     }));
   }
 
-  if (process.env.NODE_ENV === "development" && err.stack) {
+  if (config.NODE_ENV === "development" && err.stack) {
     payload.stack = err.stack;
   }
 
