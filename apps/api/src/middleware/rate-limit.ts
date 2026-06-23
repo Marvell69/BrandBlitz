@@ -100,6 +100,10 @@ function userAwareKey(req: Request): string {
   return `ip:${normalizeClientIp(req.ip)}`;
 }
 
+function ipKey(req: Request): string {
+  return `ip:${normalizeClientIp(req.ip)}`;
+}
+
 // ── Redis store ───────────────────────────────────────────────────────────────
 
 function makeRedisStore() {
@@ -154,6 +158,7 @@ export const authLimiter = rateLimit({
   max: 10,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  keyGenerator: ipKey,
   passOnStoreError: true,
   store: redisStore,
   handler: (req, res) => {
@@ -206,5 +211,6 @@ export const webhookLimiter = rateLimit({
   max: 1000,
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  keyGenerator: ipKey,
   store: redisStore,
 });

@@ -195,6 +195,23 @@ describe("key derivation", () => {
     expect(responses.filter((res) => res.status === 429)).toHaveLength(95);
   });
 
+  it("uses the same IPv6 /64 bucket on pre-authentication routes", async () => {
+    const app = makeApp(authLimiter);
+    const prefix = keySeq.toString(16);
+
+    for (let i = 0; i < 10; i++) {
+      const response = await request(app)
+        .get("/")
+        .set("X-Forwarded-For", `2001:db8:beef:${prefix}::${i.toString(16)}`);
+      expect(response.status).toBe(200);
+    }
+
+    const blocked = await request(app)
+      .get("/")
+      .set("X-Forwarded-For", `2001:db8:beef:${prefix}::ffff`);
+    expect(blocked.status).toBe(429);
+  });
+
   it("two different authenticated users get independent buckets", async () => {
     const user1 = nextUser();
     const user2 = nextUser();
