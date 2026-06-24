@@ -45,8 +45,29 @@ const ChallengeSchema = z.object({
   brandId: z.string().uuid(),
   poolAmountUsdc: z.string().regex(/^\d+(\.\d{1,7})?$/),
   maxPlayers: z.number().int().positive().optional(),
-  endsAt: z.string().datetime().optional(),
+  endsAt: z.string().datetime(),
 });
+
+const MIN_CHALLENGE_DURATION_MS = 60 * 60 * 1000;
+const CHALLENGE_DURATION_GRACE_MS = 5_000;
+
+function validateChallengeEndsAt(endsAt: string): void {
+  const endsAtMs = new Date(endsAt).getTime();
+  const nowMs = Date.now();
+  const minEndsAtMs = nowMs + MIN_CHALLENGE_DURATION_MS;
+
+  if (endsAtMs <= nowMs) {
+    throw createError("Challenge end time must be in the future", 400, "ENDS_AT_PAST");
+  }
+
+  if (endsAtMs < minEndsAtMs - CHALLENGE_DURATION_GRACE_MS) {
+    throw createError(
+      "Challenge duration must be at least 1 hour",
+      400,
+      "ENDS_AT_TOO_SOON"
+    );
+  }
+}
 
 /**
  * GET /brands
@@ -138,6 +159,7 @@ router.post("/", authenticate, async (req, res) => {
  */
 router.post("/challenges", authenticate, requireCurrentTosAccepted, async (req, res) => {
   const body = ChallengeSchema.parse(req.body);
+  validateChallengeEndsAt(body.endsAt);
 
   const brand = await getBrandById(body.brandId);
   if (!brand) throw createError("Brand not found", 404);
